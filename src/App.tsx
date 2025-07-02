@@ -65,7 +65,7 @@ function App() {
   });
   const events = useMemo(() => allEvents.filter((e) => e.date === date), [date]);
   const rooms = useMemo(() => getRooms(events), [events]);
-  const [selected, setSelected] = useLocalSelection(date);
+  const [selected, setSelected] = useLocalSelection(DATES[0]);
   const [popup, setPopup] = useState<Event | null>(null);
   const [showDisclaimer, setShowDisclaimer] = useState(() => {
     return localStorage.getItem("ax2025-disclaimer-shown") !== "1";
@@ -170,8 +170,10 @@ function App() {
     }
   };
 
-  // Settings modal state
+  // Modal states
   const [showSettings, setShowSettings] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState("");
 
   // Edit mode icons
   const EditIcon = () => (
@@ -396,13 +398,9 @@ function App() {
               >
                 Export Selection
               </button>
-              <input
-                type="text"
-                placeholder="Paste base64 to import"
-                onBlur={(e) => {
-                  if (e.target.value) importSelection(e.target.value);
-                }}
-              />
+              <button onClick={() => setShowImportModal(true)}>
+                Import Selection
+              </button>
               <button onClick={syncToGoogle} disabled={!googleFormUrl}>Sync Google</button>
               <button onClick={() => setShowSettings(true)} style={{ marginLeft: '8px' }}>
                 Google Settings
@@ -576,13 +574,9 @@ function App() {
               >
                 Export Selection
               </button>
-              <input
-                type="text"
-                placeholder="Paste base64 to import"
-                onBlur={(e) => {
-                  if (e.target.value) importSelection(e.target.value);
-                }}
-              />
+              <button onClick={() => setShowImportModal(true)}>
+                Import Selection
+              </button>
               <button onClick={syncToGoogle} disabled={!googleFormUrl}>Sync Google</button>
               <button onClick={() => setShowSettings(true)} style={{ marginLeft: '8px' }}>
                 Google Settings
@@ -648,6 +642,53 @@ function App() {
             </div>
             <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between' }}>
               <button onClick={() => setShowSettings(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div
+          className="ax2025-popup"
+          tabIndex={0}
+          onClick={() => setShowImportModal(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowImportModal(false);
+          }}
+        >
+          <div className="ax2025-popup-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Import Selection</h2>
+            <div>
+              <b>Paste Base64 Data:</b>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                style={{ 
+                  width: '90%', 
+                  minHeight: '100px', 
+                  marginTop: '8px', 
+                  padding: '8px',
+                  fontFamily: 'monospace'
+                }}
+                placeholder="Paste your exported base64 data here"
+              />
+              <div style={{ marginTop: '4px', fontSize: '0.8em', color: '#666' }}>
+                Paste the base64 encoded data that was previously exported
+              </div>
+            </div>
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between' }}>
+              <button onClick={() => {
+                if (importText.trim() !== '') {
+                  importSelection(importText.trim());
+                  setShowImportModal(false);
+                  setImportText('');
+                }
+              }}>Import</button>
+              <button onClick={() => {
+                setShowImportModal(false);
+                setImportText('');
+              }}>Cancel</button>
             </div>
           </div>
         </div>
