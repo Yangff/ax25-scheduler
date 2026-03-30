@@ -1,14 +1,41 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { events as allEvents } from "./events";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import type { Event } from "./events";
+import type { ConventionMeta, Convention } from "./conventions";
+import { fetchConventionList, fetchConvention, generateDates, stripYear } from "./conventions";
 import "./App.css";
 
-const DATES = [
-  "July 3, 2025",
-  "July 4, 2025",
-  "July 5, 2025",
-  "July 6, 2025",
-];
+function useLongPress(callback: () => void, ms = 500) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+  const didLongPress = useRef(false);
+
+  const start = useCallback(() => {
+    didLongPress.current = false;
+    timerRef.current = setTimeout(() => {
+      didLongPress.current = true;
+    }, ms);
+  }, [ms]);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  return {
+    onTouchStart: start,
+    onTouchEnd: (e: React.TouchEvent) => {
+      if (didLongPress.current) {
+        e.preventDefault(); // prevent the click from firing
+        callbackRef.current(); // call here so window.open works as user gesture
+      }
+      cancel();
+    },
+    onTouchMove: cancel,
+  };
+}
 
 const getRooms = (events: Event[]) =>
   Array.from(new Set(events.map((e: Event) => e.panelRoom)));
@@ -22,6 +49,13 @@ const parseTime = (t: string): number => {
   return h + m / 60;
 };
 
+// For events that cross midnight (end < start), cap end at 24 (midnight)
+const effectiveEnd = (e: Event): number => {
+  const s = parseTime(e.start);
+  const en = parseTime(e.end);
+  return en <= s ? 24 : en;
+};
+
 const formatTime = (h: number): string => {
   const hour = Math.floor(h);
   const min = Math.round((h - hour) * 60);
@@ -30,8 +64,8 @@ const formatTime = (h: number): string => {
   return `${h12}:${min.toString().padStart(2, "0")} ${ampm}`;
 };
 
-function useLocalSelection(date: string) {
-  const key = `ax2025-selected-${date}`;
+function useLocalSelection(conventionId: string) {
+  const key = `scheduler-selected-${conventionId}`;
   const [selected, setSelected] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(key);
@@ -39,10 +73,20 @@ function useLocalSelection(date: string) {
     } catch {}
     return new Set();
   });
-  const save = (sel: Set<string>) => {
+  const save = useCallback((sel: Set<string>) => {
     setSelected(new Set(sel));
     localStorage.setItem(key, btoa(JSON.stringify(Array.from(sel))));
-  };
+  }, [key]);
+  // Reload when conventionId changes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) setSelected(new Set(JSON.parse(atob(raw))));
+      else setSelected(new Set());
+    } catch {
+      setSelected(new Set());
+    }
+  }, [key]);
   return [selected, save] as const;
 }
 
@@ -56,42 +100,155 @@ function getEventId(e: Event) {
   return `${e.date}|${e.panelRoom}|${title}|${e.start}`;
 }
 
+function EditEventCard({
+  ev, id, sel, overlap, span, roomIndex, slotIndex,
+  onToggle, onPopup,
+}: {
+  ev: Event; id: string; sel: boolean; overlap: boolean; span: number;
+  roomIndex: number; slotIndex: number;
+  onToggle: () => void; onPopup: () => void;
+}) {
+  const longPress = useLongPress(onPopup);
+  return (
+    <div
+      key={id}
+      className={
+        "ax2025-event" +
+        (sel ? " selected" : "") +
+        (overlap ? " ax2025-collision" : "") +
+        (span > 1 ? " multi-slot" : "")
+      }
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === "Enter" || e.key === " ") onToggle();
+      }}
+      onDoubleClick={onPopup}
+      {...longPress}
+      aria-label={ev.title}
+      title={ev.title}
+      style={{
+        gridColumn: roomIndex + 2,
+        gridRow: `${slotIndex + 1} / span ${span}`,
+        "--slot-span": span,
+      } as React.CSSProperties}
+    >
+      <div className="ax2025-event-title">{ev.title}</div>
+      {span > 1 && (
+        <div className="ax2025-event-time">
+          {ev.start} - {ev.end}
+        </div>
+      )}
+      {overlap && (
+        <div className="ax2025-warning">Overlap!</div>
+      )}
+    </div>
+  );
+}
+
 function App() {
-  const [date, setDate] = useState(DATES[0]);
+  // Convention state
+  const [conventionList, setConventionList] = useState<ConventionMeta[]>([]);
+  const [conventionId, setConventionId] = useState<string>(() => {
+    return localStorage.getItem("scheduler-active-convention") || "";
+  });
+  const [convention, setConvention] = useState<Convention | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load convention list on mount
+  useEffect(() => {
+    fetchConventionList().then((list) => {
+      setConventionList(list);
+      // If no saved convention or saved one doesn't exist, use first
+      if (list.length > 0) {
+        setConventionId((prev) => {
+          if (prev && list.some((c) => c.id === prev)) return prev;
+          return list[0].id;
+        });
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  // Load convention data when conventionId changes
+  useEffect(() => {
+    if (!conventionId) return;
+    setLoading(true);
+    fetchConvention(conventionId).then((data) => {
+      setConvention(data);
+      setLoading(false);
+    });
+    localStorage.setItem("scheduler-active-convention", conventionId);
+  }, [conventionId]);
+
+  // Derive dates from convention metadata
+  const DATES = useMemo(() => {
+    if (!convention) return [];
+    return generateDates(convention.startDate, convention.endDate);
+  }, [convention]);
+
+  const [date, setDate] = useState("");
+  // Reset date when DATES changes
+  useEffect(() => {
+    if (DATES.length > 0 && !DATES.includes(date)) {
+      setDate(DATES[0]);
+    }
+  }, [DATES, date]);
+
   const [editMode, setEditMode] = useState(() => {
-    // Initialize from localStorage or default to true (edit mode)
-    const savedEditMode = localStorage.getItem("ax2025-edit-mode");
+    const savedEditMode = localStorage.getItem("scheduler-edit-mode");
     return savedEditMode === null ? true : savedEditMode === "true";
   });
-  const events = useMemo(() => allEvents.filter((e) => e.date === date), [date]);
+  const allEvents = convention?.events ?? [];
+  const events = useMemo(() => allEvents.filter((e) => e.date === date), [allEvents, date]);
   const rooms = useMemo(() => getRooms(events), [events]);
-  const [selected, setSelected] = useLocalSelection(DATES[0]);
+  const [selected, setSelected] = useLocalSelection(conventionId || "__none__");
   const [popup, setPopup] = useState<Event | null>(null);
+
+  // On mobile, open event details in a real new tab; on desktop, use the popup
+  const isMobile = useCallback(() => screen.width <= 600, []);
+
+  const showEventDetail = useCallback((ev: Event) => {
+    if (isMobile()) {
+      const data = encodeURIComponent(JSON.stringify({
+        title: ev.title,
+        panelRoom: ev.panelRoom,
+        start: ev.start,
+        end: ev.end,
+        date: ev.date,
+        ticket: ev.ticket,
+        panelDescription: ev.panelDescription,
+      }));
+      window.open(window.location.pathname + '?detail=' + data, '_blank');
+    } else {
+      setPopup(ev);
+    }
+  }, []);
+
   const [showDisclaimer, setShowDisclaimer] = useState(() => {
-    return localStorage.getItem("ax2025-disclaimer-shown") !== "1";
+    return localStorage.getItem("scheduler-disclaimer-shown") !== "1";
   });
   
   // Google Form URL state with localStorage persistence
   const [googleFormUrl, setGoogleFormUrl] = useState(() => {
-    return localStorage.getItem("ax2025-google-form-url") || 
-      "";
+    return localStorage.getItem("scheduler-google-form-url") || "";
   });
   
   // Save Google Form URL to localStorage when it changes
   useEffect(() => {
-    localStorage.setItem("ax2025-google-form-url", googleFormUrl);
+    localStorage.setItem("scheduler-google-form-url", googleFormUrl);
   }, [googleFormUrl]);
 
   // Save disclaimer state
   useEffect(() => {
     if (!showDisclaimer) {
-      localStorage.setItem("ax2025-disclaimer-shown", "1");
+      localStorage.setItem("scheduler-disclaimer-shown", "1");
     }
   }, [showDisclaimer]);
   
   // Save edit mode state
   useEffect(() => {
-    localStorage.setItem("ax2025-edit-mode", String(editMode));
+    localStorage.setItem("scheduler-edit-mode", String(editMode));
   }, [editMode]);
 
   // Build time slots
@@ -99,14 +256,14 @@ function App() {
     let times: number[] = [];
     events.forEach((e: Event) => {
       const s = parseTime(e.start);
-      const en = parseTime(e.end);
+      const en = effectiveEnd(e);
       times.push(s, en);
     });
     times = Array.from(new Set(times)).sort((a, b) => a - b);
     // Only show slots with at least one event
     return times.filter((t: number) =>
       events.some(
-        (e: Event) => parseTime(e.start) <= t && parseTime(e.end) > t
+        (e: Event) => parseTime(e.start) <= t && effectiveEnd(e) > t
       )
     );
   }, [events]);
@@ -114,7 +271,7 @@ function App() {
   // Calculate event span (how many slots it covers)
   const calculateEventSpan = (event: Event, allSlots: number[]): number => {
     const startTime = parseTime(event.start);
-    const endTime = parseTime(event.end);
+    const endTime = effectiveEnd(event);
     
     // Find the indices in the slots array
     const startIndex = allSlots.findIndex(t => t === startTime);
@@ -132,12 +289,12 @@ function App() {
   function isOverlapping(ev: Event): boolean {
     const thisId = getEventId(ev);
     const thisStart = parseTime(ev.start);
-    const thisEnd = parseTime(ev.end);
+    const thisEnd = effectiveEnd(ev);
     for (const e of events) {
       if (getEventId(e) === thisId) continue;
       if (!selected.has(getEventId(e))) continue;
       const s = parseTime(e.start);
-      const en = parseTime(e.end);
+      const en = effectiveEnd(e);
       if (thisStart <= en && thisEnd >= s) {
         return true;
       }
@@ -145,15 +302,25 @@ function App() {
     return false;
   }
 
-  // Export/import selection
+  // Export/import selection (includes convention ID for validation)
   function exportSelection(): string {
-    const arr = Array.from(selected);
-    return btoa(JSON.stringify(arr));
+    const payload = { conventionId, selected: Array.from(selected) };
+    return btoa(JSON.stringify(payload));
   }
   function importSelection(str: string): void {
     try {
-      const arr = JSON.parse(atob(str));
-      setSelected(new Set(arr));
+      const raw = JSON.parse(atob(str));
+      // Support both old format (plain array) and new format (with conventionId)
+      if (Array.isArray(raw)) {
+        setSelected(new Set(raw));
+      } else if (raw && Array.isArray(raw.selected)) {
+        if (raw.conventionId && raw.conventionId !== conventionId) {
+          if (!confirm(`This export is from "${raw.conventionId}" but you have "${conventionId}" selected. Import anyway?`)) {
+            return;
+          }
+        }
+        setSelected(new Set(raw.selected));
+      }
     } catch {}
   }
 
@@ -175,6 +342,18 @@ function App() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState("");
 
+  // Header ref for measuring height (fixed positioning needs spacer)
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(60);
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setHeaderHeight(entry.contentRect.height + 16);
+    });
+    ro.observe(headerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
   // Edit mode icons
   const EditIcon = () => (
     <div className="ax2025-mode-icon" title="Switch to Edit Mode">
@@ -188,6 +367,14 @@ function App() {
     </div>
   );
 
+  if (loading || !convention) {
+    return (
+      <div className="ax2025-root">
+        <div style={{ padding: 32, textAlign: 'center' }}>Loading convention data...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="ax2025-root">
       {showDisclaimer && (
@@ -198,7 +385,7 @@ function App() {
           </div>
         </div>
       )}
-      <div className="ax2025-header">
+      <div className="ax2025-header" ref={headerRef}>
         <div className="ax2025-tabs">
           {DATES.map((d: string) => (
             <button
@@ -206,21 +393,9 @@ function App() {
               className={d === date ? "active" : ""}
               onClick={() => setDate(d)}
             >
-              {d.replace(", 2025", "")}
+              {stripYear(d)}
             </button>
           ))}
-        </div>
-        <div 
-          className="ax2025-mode"
-          onClick={() => setEditMode(!editMode)}
-          title={editMode ? "Switch to Display Mode" : "Switch to Edit Mode"}
-        >
-          <input
-            type="checkbox"
-            checked={editMode}
-            onChange={() => {}}
-          />
-          {editMode ? <ViewIcon /> : <EditIcon />}
         </div>
       </div>
       
@@ -235,7 +410,7 @@ function App() {
         <input type="hidden" name="data" value="" />
       </form>
       
-      <div className="ax2025-calendar">
+      <div className="ax2025-calendar" style={{ paddingTop: headerHeight }}>
         {editMode ? (
           <div className="ax2025-edit">
             <div className="ax2025-calendar-table">
@@ -243,29 +418,26 @@ function App() {
                 className="ax2025-calendar-header"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: `auto repeat(${rooms.length}, minmax(160px, 1fr))`,
+                  gridTemplateColumns: `auto repeat(${rooms.length}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
                 }}
               >
                 <div className="ax2025-calendar-timecol" style={{gridColumn: '1/2'}}></div>
                 {rooms.map((room: string) => {
-                  const shortRoom = room.length > 16 ? room.slice(0, 16) + '…' : room;
                   return (
                     <div
                       key={room}
                       className="ax2025-calendar-room ax2025-room-header"
+                      style={{ maxWidth: convention.roomColumnWidth ?? 200 }}
                       title={room}
                     >
-                      <span className="ax2025-room-label">{shortRoom}</span>
-                      {room.length > 16 && (
-                        <span className="ax2025-room-full">{room}</span>
-                      )}
+                      <span className="ax2025-room-label">{room}</span>
                     </div>
                   );
                 })}
               </div>
               <div className="ax2025-calendar-body" style={{ 
                 display: 'grid',
-                gridTemplateColumns: `auto repeat(${rooms.length}, minmax(160px, 1fr))`,
+                gridTemplateColumns: `auto repeat(${rooms.length}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
                 gridAutoRows: 'auto'
               }}>
                 {/* Render time slots */}
@@ -308,7 +480,7 @@ function App() {
                         (e: Event) =>
                           e.panelRoom === room &&
                           parseTime(e.start) < t &&
-                          parseTime(e.end) > t
+                          effectiveEnd(e) > t
                       );
                       
                       // If no ongoing event, render empty cell
@@ -341,48 +513,23 @@ function App() {
                     const overlap = sel && isOverlapping(ev);
                     
                     return (
-                      <div
+                      <EditEventCard
                         key={id}
-                        className={
-                          "ax2025-event" +
-                          (sel ? " selected" : "") +
-                          (overlap ? " ax2025-collision" : "") +
-                          (span > 1 ? " multi-slot" : "")
-                        }
-                        tabIndex={0}
-                        onClick={() => {
+                        ev={ev}
+                        id={id}
+                        sel={sel}
+                        overlap={overlap}
+                        span={span}
+                        roomIndex={roomIndex}
+                        slotIndex={slotIndex}
+                        onToggle={() => {
                           const next: Set<string> = new Set(selected);
                           if (sel) next.delete(id);
                           else next.add(id);
                           setSelected(next);
                         }}
-                        onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            const next: Set<string> = new Set(selected);
-                            if (sel) next.delete(id);
-                            else next.add(id);
-                            setSelected(next);
-                          }
-                        }}
-                        onDoubleClick={() => setPopup(ev)}
-                        aria-label={ev.title}
-                        title={ev.title}
-                        style={{
-                          gridColumn: roomIndex + 2,
-                          gridRow: `${slotIndex + 1} / span ${span}`,
-                          "--slot-span": span,
-                        } as React.CSSProperties}
-                      >
-                        <div className="ax2025-event-title">{ev.title}</div>
-                        {span > 1 && (
-                          <div className="ax2025-event-time">
-                            {ev.start} - {ev.end}
-                          </div>
-                        )}
-                        {overlap && (
-                          <div className="ax2025-warning">Overlap!</div>
-                        )}
-                      </div>
+                        onPopup={() => showEventDetail(ev)}
+                      />
                     );
                   }).filter(Boolean);
                 })}
@@ -405,6 +552,32 @@ function App() {
               <button onClick={() => setShowSettings(true)} style={{ marginLeft: '8px' }}>
                 Google Settings
               </button>
+              {conventionList.length > 1 && (
+                <select
+                  className="ax2025-convention-select"
+                  value={conventionId}
+                  onChange={(e) => setConventionId(e.target.value)}
+                >
+                  {conventionList.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+              {conventionList.length === 1 && (
+                <span className="ax2025-convention-name">{convention.name}</span>
+              )}
+              <div 
+                className="ax2025-mode"
+                onClick={() => setEditMode(!editMode)}
+                title={editMode ? "Switch to Display Mode" : "Switch to Edit Mode"}
+              >
+                <input
+                  type="checkbox"
+                  checked={editMode}
+                  onChange={() => {}}
+                />
+                {editMode ? <ViewIcon /> : <EditIcon />}
+              </div>
             </div>
           </div>
         ) : (
@@ -438,7 +611,7 @@ function App() {
                   const lastEvent = column[column.length - 1];
                   
                   // If this event starts after the last event in this column ends
-                  if (parseTime(lastEvent.end) <= eventStart) {
+                  if (effectiveEnd(lastEvent) <= eventStart) {
                     column.push(event);
                     placed = true;
                   } else {
@@ -460,7 +633,7 @@ function App() {
                     className="ax2025-calendar-header"
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: `auto repeat(${numColumns}, minmax(160px, 1fr))`,
+                      gridTemplateColumns: `auto repeat(${numColumns}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
                     }}
                   >
                     <div className="ax2025-calendar-timecol" style={{gridColumn: '1/2'}}></div>
@@ -475,7 +648,7 @@ function App() {
                   </div>
                   <div className="ax2025-calendar-body" style={{ 
                     display: 'grid',
-                    gridTemplateColumns: `auto repeat(${numColumns}, minmax(160px, 1fr))`,
+                    gridTemplateColumns: `auto repeat(${numColumns}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
                     gridAutoRows: 'minmax(40px, auto)',
                     position: 'relative',
                   }}>
@@ -516,14 +689,14 @@ function App() {
                       column.map(ev => {
                         // Find the row where this event starts
                         const startSlotIndex = slots.findIndex(t => 
-                          parseTime(ev.start) <= t && t < parseTime(ev.end)
+                          parseTime(ev.start) <= t && t < effectiveEnd(ev)
                         );
                         
                         if (startSlotIndex === -1) return null;
                         
                         // Calculate span - how many slots this event covers
                         const span = slots.filter(t => 
-                          t >= parseTime(ev.start) && t < parseTime(ev.end)
+                          t >= parseTime(ev.start) && t < effectiveEnd(ev)
                         ).length;
                         
                         // Ensure minimum span of 1
@@ -536,9 +709,9 @@ function App() {
                             key={getEventId(ev)}
                             className={`ax2025-event selected ${finalSpan > 1 ? 'multi-slot' : ''}`}
                             tabIndex={0}
-                            onClick={() => setPopup(ev)}
+                            onClick={() => showEventDetail(ev)}
                             onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                              if (e.key === "Enter" || e.key === " ") setPopup(ev);
+                              if (e.key === "Enter" || e.key === " ") showEventDetail(ev);
                             }}
                             aria-label={ev.title}
                             title={ev.title}
@@ -581,6 +754,32 @@ function App() {
               <button onClick={() => setShowSettings(true)} style={{ marginLeft: '8px' }}>
                 Google Settings
               </button>
+              {conventionList.length > 1 && (
+                <select
+                  className="ax2025-convention-select"
+                  value={conventionId}
+                  onChange={(e) => setConventionId(e.target.value)}
+                >
+                  {conventionList.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+              {conventionList.length === 1 && (
+                <span className="ax2025-convention-name">{convention.name}</span>
+              )}
+              <div 
+                className="ax2025-mode"
+                onClick={() => setEditMode(!editMode)}
+                title={editMode ? "Switch to Display Mode" : "Switch to Edit Mode"}
+              >
+                <input
+                  type="checkbox"
+                  checked={editMode}
+                  onChange={() => {}}
+                />
+                {editMode ? <ViewIcon /> : <EditIcon />}
+              </div>
             </div>
           </div>
         )}

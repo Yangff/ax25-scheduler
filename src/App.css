@@ -9,7 +9,11 @@
   font-family: system-ui, sans-serif;
   background: #f8f9fa;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   color: #222;
+  overflow-x: hidden;
 }
 .ax2025-header {
   display: flex;
@@ -18,10 +22,41 @@
   padding: 1rem 1.5rem 0.5rem 1.5rem;
   background: #fff;
   border-bottom: 1px solid #e0e0e0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  box-sizing: border-box;
+}
+.ax2025-convention-selector {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+  min-width: 0;
+}
+.ax2025-convention-selector select {
+  font-size: 1rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+  max-width: 100%;
+}
+.ax2025-convention-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1976d2;
 }
 .ax2025-tabs {
   display: flex;
   gap: 0.5rem;
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .ax2025-tabs button {
   background: none;
@@ -41,6 +76,12 @@
   font-weight: bold;
 }
 
+.ax2025-calendar {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
 .ax2025-calendar-table {
   width: 100%;
   min-width: 350px;
@@ -57,9 +98,7 @@
   font-weight: bold;
   border-radius: 0.5rem 0.5rem 0 0;
   overflow: hidden;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  position: relative;
 }
 .ax2025-calendar-row:last-child {
   border-radius: 0 0 0.5rem 0.5rem;
@@ -74,7 +113,6 @@
 }
 .ax2025-calendar-room {
   min-width: 160px;
-  max-width: 200px;
   padding: 0.5rem;
   text-align: center;
   background: #e3eafc;
@@ -258,6 +296,15 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
+}
+.ax2025-convention-select {
+  font-size: 1rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
 }
 .ax2025-export input[type="text"] {
   min-width: 200px;
@@ -302,13 +349,37 @@
 
 @media (max-width: 600px) {
   .ax2025-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.7rem 0.5rem 0.5rem 0.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.5rem 0.75rem;
+    padding: 0.7rem 0.75rem 0.5rem 0.75rem;
+  }
+  .ax2025-convention-selector {
+    grid-column: 1 / 2;
+    margin-right: 0;
+    width: 200px;
+  }
+  .ax2025-convention-selector select,
+  .ax2025-convention-name {
+    width: 100%;
+  }
+  .ax2025-tabs {
+    grid-column: 1 / -1;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+    scrollbar-width: none;
+  }
+  .ax2025-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .ax2025-tabs button {
+    flex: 0 0 auto;
   }
   .ax2025-calendar {
-    padding: 0.2rem;
+    padding-inline: 0;
   }
   .ax2025-calendar-room {
     min-width: 80px;
@@ -325,10 +396,7 @@
 
 
 .ax2025-mode {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-  z-index: 1000;
+  flex-shrink: 0;
   background: white;
   padding: 8px;
   border-radius: 50%;
@@ -340,6 +408,15 @@
   height: 25px;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+@media (max-width: 600px) {
+  .ax2025-mode {
+    grid-column: 2 / 3;
+    grid-row: 1;
+    margin-left: 0;
+    justify-self: end;
+  }
 }
 
 .ax2025-mode:hover {

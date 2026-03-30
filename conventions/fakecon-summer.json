@@ -1,0 +1,71 @@
+{
+  "name": "FakeCon Summer 2026",
+  "startDate": "August 15, 2026",
+  "endDate": "August 16, 2026",
+  "fake": true,
+  "events": [
+    {
+      "title": "Summer Kickoff",
+      "panelRoom": "Grand Ballroom",
+      "start": "9:00 AM",
+      "end": "10:00 AM",
+      "panelDescription": "Start the summer convention with our exciting kickoff event!",
+      "ticket": false,
+      "date": "August 15, 2026"
+    },
+    {
+      "title": "Mecha Design Panel",
+      "panelRoom": "Room 101",
+      "start": "10:30 AM",
+      "end": "11:30 AM",
+      "panelDescription": "Explore the art of mecha design with veteran animators.",
+      "ticket": false,
+      "date": "August 15, 2026"
+    },
+    {
+      "title": "J-Pop Dance Workshop",
+      "panelRoom": "Dance Studio",
+      "start": "10:30 AM",
+      "end": "12:00 PM",
+      "panelDescription": "Learn choreography from popular J-Pop songs!",
+      "ticket": true,
+      "date": "August 15, 2026"
+    },
+    {
+      "title": "Anime Music Concert",
+      "panelRoom": "Grand Ballroom",
+      "start": "7:00 PM",
+      "end": "9:00 PM",
+      "panelDescription": "Live performances of your favorite anime themes.",
+      "ticket": true,
+      "date": "August 15, 2026"
+    },
+    {
+      "title": "Figure Collecting Panel",
+      "panelRoom": "Room 101",
+      "start": "11:00 AM",
+      "end": "12:00 PM",
+      "panelDescription": "Tips and tricks for starting and maintaining your anime figure collection.",
+      "ticket": false,
+      "date": "August 16, 2026"
+    },
+    {
+      "title": "Farewell Ceremony",
+      "panelRoom": "Grand Ballroom",
+      "start": "4:00 PM",
+      "end": "5:00 PM",
+      "panelDescription": "Wrap up an amazing FakeCon Summer 2026!",
+      "ticket": false,
+      "date": "August 16, 2026"
+    },
+    {
+      "title": "Isekai Writing Workshop",
+      "panelRoom": "Room 102",
+      "start": "1:00 PM",
+      "end": "2:30 PM",
+      "panelDescription": "Write your own isekai light novel opening chapter with guidance from published authors.",
+      "ticket": false,
+      "date": "August 16, 2026"
+    }
+  ]
+}

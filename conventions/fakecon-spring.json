@@ -1,0 +1,89 @@
+{
+  "name": "FakeCon Spring 2026",
+  "startDate": "April 10, 2026",
+  "endDate": "April 12, 2026",
+  "fake": true,
+  "events": [
+    {
+      "title": "Opening Ceremony",
+      "panelRoom": "Main Hall",
+      "start": "10:00 AM",
+      "end": "11:00 AM",
+      "panelDescription": "Welcome to FakeCon Spring 2026! Join us for the kickoff.",
+      "ticket": false,
+      "date": "April 10, 2026"
+    },
+    {
+      "title": "Voice Acting 101",
+      "panelRoom": "Panel Room A",
+      "start": "11:00 AM",
+      "end": "12:00 PM",
+      "panelDescription": "Learn the basics of voice acting from industry professionals.",
+      "ticket": false,
+      "date": "April 10, 2026"
+    },
+    {
+      "title": "Cosplay Contest",
+      "panelRoom": "Main Hall",
+      "start": "2:00 PM",
+      "end": "4:00 PM",
+      "panelDescription": "Show off your best cosplay! Prizes for top 3 in each category.",
+      "ticket": true,
+      "date": "April 10, 2026"
+    },
+    {
+      "title": "Anime Trivia Night",
+      "panelRoom": "Panel Room B",
+      "start": "11:00 AM",
+      "end": "12:30 PM",
+      "panelDescription": "Test your anime knowledge against other fans!",
+      "ticket": false,
+      "date": "April 10, 2026"
+    },
+    {
+      "title": "Manga Drawing Workshop",
+      "panelRoom": "Workshop Room",
+      "start": "10:00 AM",
+      "end": "12:00 PM",
+      "panelDescription": "Hands-on manga drawing workshop for beginners and intermediate artists.",
+      "ticket": true,
+      "date": "April 11, 2026"
+    },
+    {
+      "title": "Industry Panel: Future of Streaming",
+      "panelRoom": "Panel Room A",
+      "start": "1:00 PM",
+      "end": "2:00 PM",
+      "panelDescription": "Industry leaders discuss the future of anime streaming platforms.",
+      "ticket": false,
+      "date": "April 11, 2026"
+    },
+    {
+      "title": "AMV Showcase",
+      "panelRoom": "Main Hall",
+      "start": "3:00 PM",
+      "end": "5:00 PM",
+      "panelDescription": "Watch the best AMVs submitted by our community.",
+      "ticket": false,
+      "date": "April 11, 2026"
+    },
+    {
+      "title": "Closing Ceremony",
+      "panelRoom": "Main Hall",
+      "start": "3:00 PM",
+      "end": "4:30 PM",
+      "panelDescription": "Thank you for attending FakeCon Spring 2026! See you next year!",
+      "ticket": false,
+      "date": "April 12, 2026"
+    },
+    {
+      "title": "Fan Art Gallery",
+      "panelRoom": "Gallery Room",
+      "start": "10:00 AM",
+      "end": "2:00 PM",
+      "panelDescription": "Browse amazing fan art from talented community artists.",
+      "ticket": false,
+      "date": "April 12, 2026"
+    }
+  ]
+}
