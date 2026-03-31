@@ -523,10 +523,6 @@
   position: relative;
   min-height: 40px;
   z-index: 1;
-}
-
-/* Make grid lines lighter to be less distracting */
-.ax2025-time-gridline:not(:last-child) {
   border-bottom: 1px solid #e0e0e0;
 }
 
