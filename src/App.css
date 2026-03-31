@@ -79,13 +79,8 @@
 .ax2025-calendar {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
-  -webkit-overflow-scrolling: touch;
-}
-/* In edit mode, calendar becomes a viewport-height scroll container */
-.ax2025-root-edit .ax2025-calendar {
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .ax2025-calendar-table {
   width: 100%;
