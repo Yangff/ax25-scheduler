@@ -101,10 +101,10 @@ function getEventId(e: Event) {
 }
 
 function EditEventCard({
-  ev, id, sel, overlap, span, roomIndex, slotIndex,
+  ev, id, sel, overlapStatus, span, roomIndex, slotIndex,
   onToggle, onPopup,
 }: {
-  ev: Event; id: string; sel: boolean; overlap: boolean; span: number;
+  ev: Event; id: string; sel: boolean; overlapStatus: 'none' | 'adjacent' | 'overlap'; span: number;
   roomIndex: number; slotIndex: number;
   onToggle: () => void; onPopup: () => void;
 }) {
@@ -115,7 +115,8 @@ function EditEventCard({
       className={
         "ax2025-event" +
         (sel ? " selected" : "") +
-        (overlap ? " ax2025-collision" : "") +
+        (overlapStatus === 'overlap' ? " ax2025-collision" : "") +
+        (overlapStatus === 'adjacent' ? " ax2025-adjacent" : "") +
         (span > 1 ? " multi-slot" : "")
       }
       tabIndex={0}
@@ -139,8 +140,11 @@ function EditEventCard({
           {ev.start} - {ev.end}
         </div>
       )}
-      {overlap && (
-        <div className="ax2025-warning">Overlap!</div>
+      {overlapStatus === 'overlap' && (
+        <div className="ax2025-overlap-badge">Overlap!</div>
+      )}
+      {overlapStatus === 'adjacent' && (
+        <div className="ax2025-adjacent-badge">Adjacent</div>
       )}
     </div>
   );
@@ -300,21 +304,35 @@ function App() {
     return endIndex - startIndex;
   };
 
-  // Overlap detection
-  function isOverlapping(ev: Event): boolean {
+  // Overlap detection: 'none' | 'adjacent' (warning) | 'overlap' (error)
+  function getOverlapStatus(ev: Event): 'none' | 'adjacent' | 'overlap' {
     const thisId = getEventId(ev);
     const thisStart = parseTime(ev.start);
     const thisEnd = effectiveEnd(ev);
+    let hasAdjacent = false;
     for (const e of events) {
       if (getEventId(e) === thisId) continue;
       if (!selected.has(getEventId(e))) continue;
       const s = parseTime(e.start);
       const en = effectiveEnd(e);
-      if (thisStart <= en && thisEnd >= s) {
-        return true;
+      const sameRoom = ev.panelRoom === e.panelRoom;
+      if (sameRoom) {
+        // Same room: only conflict if they truly overlap (not just adjacent)
+        if (thisStart < en && thisEnd > s) {
+          return 'overlap';
+        }
+      } else {
+        // Different room: true overlap
+        if (thisStart < en && thisEnd > s) {
+          return 'overlap';
+        }
+        // Different room: adjacent (start == end or end == start)
+        if (thisStart === en || thisEnd === s) {
+          hasAdjacent = true;
+        }
       }
     }
-    return false;
+    return hasAdjacent ? 'adjacent' : 'none';
   }
 
   // Export/import selection (includes convention ID for validation)
@@ -523,7 +541,7 @@ function App() {
                     
                     const id = getEventId(ev);
                     const sel = selected.has(id);
-                    const overlap = sel && isOverlapping(ev);
+                    const overlapStatus = sel ? getOverlapStatus(ev) : 'none';
                     
                     return (
                       <EditEventCard
@@ -531,7 +549,7 @@ function App() {
                         ev={ev}
                         id={id}
                         sel={sel}
-                        overlap={overlap}
+                        overlapStatus={overlapStatus}
                         span={span}
                         roomIndex={roomIndex}
                         slotIndex={slotIndex}
