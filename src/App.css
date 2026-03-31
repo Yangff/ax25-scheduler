@@ -9,11 +9,17 @@
   font-family: system-ui, sans-serif;
   background: #f8f9fa;
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   color: #222;
   overflow-x: hidden;
+}
+.ax2025-root-edit {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 .ax2025-header {
   display: flex;
@@ -79,8 +85,8 @@
 .ax2025-calendar {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .ax2025-calendar-table {
   width: 100%;
@@ -442,6 +448,35 @@
   gap: 0;
   row-gap: 0;
   column-gap: 0;
+}
+
+/* Sticky header row (room names) */
+.ax2025-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #e3eafc;
+  border-bottom: 1px solid #d0d7e2;
+  font-weight: bold;
+}
+
+/* Sticky time column */
+.ax2025-sticky-timecol {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: #f3f6fb;
+}
+
+/* Sticky corner cell (top-left) — sticks both ways */
+.ax2025-sticky-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 15;
+  background: #e3eafc;
+  border-bottom: 1px solid #d0d7e2;
+  border-right: 1px solid #e0e0e0;
 }
 
 /* Ensure grid rows don't have any gaps */

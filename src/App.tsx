@@ -129,7 +129,7 @@ function EditEventCard({
       title={ev.title}
       style={{
         gridColumn: roomIndex + 2,
-        gridRow: `${slotIndex + 1} / span ${span}`,
+        gridRow: `${slotIndex + 2} / span ${span}`,
         "--slot-span": span,
       } as React.CSSProperties}
     >
@@ -249,6 +249,21 @@ function App() {
   // Save edit mode state
   useEffect(() => {
     localStorage.setItem("scheduler-edit-mode", String(editMode));
+  }, [editMode]);
+
+  // Lock body scrolling in edit mode
+  useEffect(() => {
+    if (editMode) {
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    };
   }, [editMode]);
 
   // Build time slots
@@ -376,7 +391,7 @@ function App() {
   }
 
   return (
-    <div className="ax2025-root">
+    <div className={`ax2025-root${editMode ? ' ax2025-root-edit' : ''}`}>
       {showDisclaimer && (
         <div className="ax2025-disclaimer-popup">
           <div className="ax2025-disclaimer-content">
@@ -410,44 +425,42 @@ function App() {
         <input type="hidden" name="data" value="" />
       </form>
       
-      <div className="ax2025-calendar" style={{ paddingTop: headerHeight }}>
+      <div className="ax2025-calendar" style={{ 
+        paddingTop: headerHeight,
+        ...(editMode ? { height: '100dvh', boxSizing: 'border-box' } : {})
+      }}>
         {editMode ? (
           <div className="ax2025-edit">
-            <div className="ax2025-calendar-table">
-              <div
-                className="ax2025-calendar-header"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: `auto repeat(${rooms.length}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
-                }}
-              >
-                <div className="ax2025-calendar-timecol" style={{gridColumn: '1/2'}}></div>
-                {rooms.map((room: string) => {
-                  return (
-                    <div
-                      key={room}
-                      className="ax2025-calendar-room ax2025-room-header"
-                      style={{ maxWidth: convention.roomColumnWidth ?? 200 }}
-                      title={room}
-                    >
-                      <span className="ax2025-room-label">{room}</span>
-                    </div>
-                  );
-                })}
-              </div>
               <div className="ax2025-calendar-body" style={{ 
-                display: 'grid',
+                display: 'inline-grid',
                 gridTemplateColumns: `auto repeat(${rooms.length}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
-                gridAutoRows: 'auto'
+                gridAutoRows: 'auto',
+                minWidth: '100%',
               }}>
-                {/* Render time slots */}
+                {/* Row 1: Sticky header — corner cell + room names */}
+                <div
+                  className="ax2025-calendar-timecol ax2025-sticky-corner"
+                  style={{ gridColumn: 1, gridRow: 1 }}
+                ></div>
+                {rooms.map((room: string, roomIndex: number) => (
+                  <div
+                    key={room}
+                    className="ax2025-calendar-room ax2025-room-header ax2025-sticky-header"
+                    style={{ gridColumn: roomIndex + 2, gridRow: 1 }}
+                    title={room}
+                  >
+                    <span className="ax2025-room-label">{room}</span>
+                  </div>
+                ))}
+
+                {/* Render time slots — shifted to row slotIndex + 2 */}
                 {slots.map((t, slotIndex) => (
                   <div
-                    className="ax2025-calendar-row"
+                    className="ax2025-calendar-row ax2025-sticky-timecol"
                     key={t}
                     style={{
-                      gridColumn: '1/2',
-                      gridRow: slotIndex + 1,
+                      gridColumn: 1,
+                      gridRow: slotIndex + 2,
                     }}
                   >
                     <div className="ax2025-calendar-timecol">
@@ -456,7 +469,7 @@ function App() {
                   </div>
                 ))}
                 
-                {/* Render events in rooms */}
+                {/* Render events in rooms — gridRow shifted by +1 in EditEventCard */}
                 {rooms.map((room, roomIndex) => {
                   // Track which slots are already occupied by multi-slot events
                   const occupiedSlots = new Set<number>();
@@ -490,7 +503,7 @@ function App() {
                             key={`${room}-${t}`}
                             style={{
                               gridColumn: roomIndex + 2,
-                              gridRow: slotIndex + 1,
+                              gridRow: slotIndex + 2,
                             }}
                             className="ax2025-time-gridline"
                           ></div>
@@ -534,7 +547,6 @@ function App() {
                   }).filter(Boolean);
                 })}
               </div>
-            </div>
             <div className="ax2025-export">
               <button
                 onClick={() => {
