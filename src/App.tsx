@@ -658,38 +658,35 @@ function App() {
               const numColumns = columns.length;
               
               return (
-                <div className="ax2025-calendar-table">
-                  <div
-                    className="ax2025-calendar-header"
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: `auto repeat(${numColumns}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
-                    }}
-                  >
-                    <div className="ax2025-calendar-timecol" style={{gridColumn: '1/2'}}></div>
+                <div className="ax2025-calendar-body" style={{ 
+                    display: 'inline-grid',
+                    gridTemplateColumns: `auto repeat(${numColumns}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
+                    gridAutoRows: 'minmax(40px, auto)',
+                    minWidth: '100%',
+                  }}>
+                    {/* Row 1: Header — corner cell + column headers */}
+                    <div
+                      className="ax2025-calendar-timecol"
+                      style={{ gridColumn: 1, gridRow: 1, background: '#e3eafc' }}
+                    ></div>
                     {columns.map((_, colIdx) => (
                       <div 
                         key={colIdx}
                         className="ax2025-calendar-room ax2025-room-header"
+                        style={{ gridColumn: colIdx + 2, gridRow: 1 }}
                       >
                         My Events {numColumns > 1 ? `(${colIdx + 1})` : ''}
                       </div>
                     ))}
-                  </div>
-                  <div className="ax2025-calendar-body" style={{ 
-                    display: 'grid',
-                    gridTemplateColumns: `auto repeat(${numColumns}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
-                    gridAutoRows: 'minmax(40px, auto)',
-                    position: 'relative',
-                  }}>
-                    {/* Add time slot markers */}
+
+                    {/* Time slot gridlines — shifted to row idx + 2 */}
                     {slots.map((t, idx) => (
                       <div 
                         key={`gridline-${t}`}
                         className="ax2025-time-gridline"
                         style={{
                           gridColumn: `1 / span ${numColumns + 1}`,
-                          gridRow: idx + 1,
+                          gridRow: idx + 2,
                           borderBottom: '1px solid #e0e0e0',
                           pointerEvents: 'none',
                           zIndex: 1,
@@ -697,24 +694,23 @@ function App() {
                       />
                     ))}
                     
-                    {/* Render time column */}
+                    {/* Render time column — shifted to row idx + 2 */}
                     {slots.map((t, idx) => (
                       <div 
                         key={`time-${t}`}
                         className="ax2025-calendar-timecol"
                         style={{
                           gridColumn: 1,
-                          gridRow: idx + 1,
+                          gridRow: idx + 2,
                           position: 'relative',
                           zIndex: 2,
-                          height: '100%',
                         }}
                       >
                         {formatTime(t)}
                       </div>
                     ))}
                     
-                    {/* Render each column of events */}
+                    {/* Render each column of events — rowStart shifted by +1 */}
                     {columns.map((column, colIdx) => 
                       column.map(ev => {
                         // Find the row where this event starts
@@ -732,7 +728,7 @@ function App() {
                         // Ensure minimum span of 1
                         const finalSpan = Math.max(1, span);
                         
-                        const rowStart = startSlotIndex + 1;
+                        const rowStart = startSlotIndex + 2;
                         
                         return (
                           <div
@@ -749,7 +745,7 @@ function App() {
                               gridColumn: colIdx + 2,
                               gridRow: `${rowStart} / span ${finalSpan}`,
                               "--slot-span": finalSpan,
-                              zIndex: 3, // Make sure events are above grid lines
+                              zIndex: 3,
                               alignSelf: 'stretch',
                               justifySelf: 'stretch',
                             } as React.CSSProperties}
@@ -764,7 +760,6 @@ function App() {
                       }).filter(Boolean)
                     )}
                   </div>
-                </div>
               );
             })()}
             <div className="ax2025-export">
