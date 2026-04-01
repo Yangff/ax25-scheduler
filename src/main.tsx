@@ -79,3 +79,32 @@ if (detailParam) {
     </StrictMode>,
   );
 }
+
+// Register service worker for offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register(
+        import.meta.env.BASE_URL + 'sw.js',
+        { scope: import.meta.env.BASE_URL }
+      );
+      // Check for updates when online
+      if (navigator.onLine && reg.active) {
+        reg.active.postMessage('check-update');
+      }
+      navigator.serviceWorker.ready.then((registration) => {
+        if (navigator.onLine && registration.active) {
+          registration.active.postMessage('check-update');
+        }
+      });
+    } catch (e) {
+      console.error('SW registration failed:', e);
+    }
+  });
+
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'update-available') {
+      console.log('App update available. Reload to update.');
+    }
+  });
+}

@@ -161,13 +161,13 @@ function App() {
 
   // Load convention list on mount
   useEffect(() => {
-    fetchConventionList().then((list) => {
+    fetchConventionList().then(({ conventions: list, defaultId }) => {
       setConventionList(list);
-      // If no saved convention or saved one doesn't exist, use first
+      // If no saved convention or saved one doesn't exist, use closest
       if (list.length > 0) {
         setConventionId((prev) => {
           if (prev && list.some((c) => c.id === prev)) return prev;
-          return list[0].id;
+          return defaultId || list[0].id;
         });
       }
       setLoading(false);

@@ -14,10 +14,20 @@ export interface Convention extends ConventionMeta {
 
 const BASE = import.meta.env.BASE_URL;
 
-export async function fetchConventionList(): Promise<ConventionMeta[]> {
+export interface ConventionListResponse {
+  conventions: ConventionMeta[];
+  defaultId?: string;
+}
+
+export async function fetchConventionList(): Promise<ConventionListResponse> {
   const res = await fetch(`${BASE}conventions.json`);
   if (!res.ok) throw new Error("Failed to fetch conventions list");
-  return res.json();
+  const data = await res.json();
+  // Handle both old format (plain array) and new format ({ conventions, defaultId })
+  if (Array.isArray(data)) {
+    return { conventions: data };
+  }
+  return data;
 }
 
 export async function fetchConvention(id: string): Promise<Convention> {

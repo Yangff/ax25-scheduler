@@ -17,8 +17,24 @@ interface ConventionFile {
   events: unknown[];
 }
 
+function findClosestConvention(index: ConventionMeta[]): string | undefined {
+  if (index.length === 0) return undefined;
+  const now = Date.now();
+  let bestId = index[0].id;
+  let bestDist = Infinity;
+  for (const c of index) {
+    // Use startDate as the reference point
+    const dist = Math.abs(new Date(c.startDate).getTime() - now);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestId = c.id;
+    }
+  }
+  return bestId;
+}
+
 function readConventions(conventionsDir: string, includeFakes: boolean) {
-  if (!fs.existsSync(conventionsDir)) return { index: [] as ConventionMeta[], files: new Map<string, string>() };
+  if (!fs.existsSync(conventionsDir)) return { index: [] as ConventionMeta[], files: new Map<string, string>(), defaultId: undefined as string | undefined };
 
   const files = fs.readdirSync(conventionsDir).filter((f: string) => f.endsWith('.json'));
   const index: ConventionMeta[] = [];
@@ -37,7 +53,8 @@ function readConventions(conventionsDir: string, includeFakes: boolean) {
     index.push({ id, name: data.name, startDate: data.startDate, endDate: data.endDate });
   }
 
-  return { index, files: conventionFiles };
+  const defaultId = findClosestConvention(index);
+  return { index, files: conventionFiles, defaultId };
 }
 
 export default function conventionsPlugin(): Plugin {
@@ -64,9 +81,9 @@ export default function conventionsPlugin(): Plugin {
 
         // Serve conventions index (dev includes fakes)
         if (cleanUrl === '/conventions.json') {
-          const { index } = readConventions(conventionsDir, true);
+          const { index, defaultId } = readConventions(conventionsDir, true);
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify(index));
+          res.end(JSON.stringify({ conventions: index, defaultId }));
           return;
         }
 
@@ -92,13 +109,13 @@ export default function conventionsPlugin(): Plugin {
 
     generateBundle() {
       // Build: only include non-fake conventions
-      const { index, files } = readConventions(conventionsDir, false);
+      const { index, files, defaultId } = readConventions(conventionsDir, false);
 
-      // Emit conventions.json index
+      // Emit conventions.json index with default
       this.emitFile({
         type: 'asset',
         fileName: 'conventions.json',
-        source: JSON.stringify(index),
+        source: JSON.stringify({ conventions: index, defaultId }),
       });
 
       // Emit individual convention files
