@@ -10,6 +10,8 @@ export interface ConventionMeta {
 export interface Convention extends ConventionMeta {
   events: Event[];
   roomColumnWidth?: number;
+  _renameMap?: Record<string, string>;
+  _deletedEvents?: string[];
 }
 
 const BASE = import.meta.env.BASE_URL;

@@ -40,6 +40,43 @@ function useLongPress(callback: () => void, ms = 500) {
 const getRooms = (events: Event[]) =>
   Array.from(new Set(events.map((e: Event) => e.panelRoom)));
 
+/**
+ * Sort rooms: group by prefix (before " - "), sort by extracted room number within groups.
+ * Rooms with many sub-columns (>2) are pushed to the end.
+ */
+function sortRooms(rooms: string[], roomSubCols: Map<string, number>): string[] {
+  // Parse room name into prefix and numeric suffix for sorting
+  function parseRoom(name: string): { prefix: string; num: number; raw: string } {
+    const dashIdx = name.indexOf(" - ");
+    const prefix = dashIdx >= 0 ? name.substring(0, dashIdx) : name;
+    // Extract leading number(s) from the location part
+    const location = dashIdx >= 0 ? name.substring(dashIdx + 3) : "";
+    const numMatch = location.match(/(\d+)/);
+    const num = numMatch ? parseInt(numMatch[1], 10) : 0;
+    return { prefix, num, raw: name };
+  }
+
+  const parsed = rooms.map(r => ({ ...parseRoom(r), subCols: roomSubCols.get(r) || 1 }));
+
+  parsed.sort((a, b) => {
+    // Push rooms with >2 sub-columns to the end
+    const aHeavy = a.subCols > 2 ? 1 : 0;
+    const bHeavy = b.subCols > 2 ? 1 : 0;
+    if (aHeavy !== bHeavy) return aHeavy - bHeavy;
+
+    // Group by prefix
+    if (a.prefix !== b.prefix) return a.prefix.localeCompare(b.prefix);
+
+    // Within same prefix, sort by room number
+    if (a.num !== b.num) return a.num - b.num;
+
+    // Fallback: alphabetical
+    return a.raw.localeCompare(b.raw);
+  });
+
+  return parsed.map(p => p.raw);
+}
+
 const parseTime = (t: string): number => {
   // "10:00 AM" or "4:30 PM"
   const [time, ampm] = t.split(" ");
@@ -64,7 +101,11 @@ const formatTime = (h: number): string => {
   return `${h12}:${min.toString().padStart(2, "0")} ${ampm}`;
 };
 
-function useLocalSelection(conventionId: string) {
+function useLocalSelection(
+  conventionId: string,
+  renameMap?: Record<string, string>,
+  deletedEvents?: string[],
+) {
   const key = `scheduler-selected-${conventionId}`;
   const [selected, setSelected] = useState<Set<string>>(() => {
     try {
@@ -77,16 +118,63 @@ function useLocalSelection(conventionId: string) {
     setSelected(new Set(sel));
     localStorage.setItem(key, btoa(JSON.stringify(Array.from(sel))));
   }, [key]);
-  // Reload when conventionId changes
+  // Reload and migrate when conventionId changes
   useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
-      if (raw) setSelected(new Set(JSON.parse(atob(raw))));
-      else setSelected(new Set());
+      if (raw) {
+        const arr: string[] = JSON.parse(atob(raw));
+        const migrated = new Set<string>();
+        const renames: string[] = [];
+        const deletions: string[] = [];
+
+        for (const id of arr) {
+          if (deletedEvents?.includes(id)) {
+            deletions.push(id);
+            console.log(`[migration] Removed deleted event: ${id}`);
+          } else if (renameMap && id in renameMap) {
+            migrated.add(renameMap[id]);
+            renames.push(`${id} → ${renameMap[id]}`);
+          } else {
+            migrated.add(id);
+          }
+        }
+
+        if (renames.length > 0 || deletions.length > 0) {
+          const msgs: string[] = [
+            "Your saved selections were updated due to schedule changes:\n",
+          ];
+          if (renames.length > 0) {
+            msgs.push("Moved/renamed events:");
+            for (const r of renames) {
+              // Extract title from key format "date|room|title|start"
+              const parts = r.split(" → ");
+              const oldTitle = parts[0].split("|")[2] || parts[0];
+              const newRoom = parts[1].split("|")[1] || "";
+              msgs.push(`  • "${oldTitle}" moved to ${newRoom}`);
+            }
+          }
+          if (deletions.length > 0) {
+            msgs.push("\nRemoved events (no longer in the schedule):");
+            for (const d of deletions) {
+              const title = d.split("|")[2] || d;
+              msgs.push(`  • "${title}"`);
+            }
+            msgs.push("\n(These events were incorrectly added previously. Sorry for the inconvenience!)");
+          }
+          alert(msgs.join("\n"));
+          setSelected(migrated);
+          localStorage.setItem(key, btoa(JSON.stringify(Array.from(migrated))));
+        } else {
+          setSelected(migrated);
+        }
+      } else {
+        setSelected(new Set());
+      }
     } catch {
       setSelected(new Set());
     }
-  }, [key]);
+  }, [key, renameMap, deletedEvents]);
   return [selected, save] as const;
 }
 
@@ -205,8 +293,12 @@ function App() {
   });
   const allEvents = convention?.events ?? [];
   const events = useMemo(() => allEvents.filter((e) => e.date === date), [allEvents, date]);
-  const rooms = useMemo(() => getRooms(events), [events]);
-  const [selected, setSelected] = useLocalSelection(conventionId || "__none__");
+  const unsortedRooms = useMemo(() => getRooms(events), [events]);
+  const [selected, setSelected] = useLocalSelection(
+    conventionId || "__none__",
+    convention?._renameMap,
+    convention?._deletedEvents,
+  );
   const [popup, setPopup] = useState<Event | null>(null);
 
   // On mobile, open event details in a real new tab; on desktop, use the popup
@@ -269,6 +361,68 @@ function App() {
       document.body.style.overflow = '';
     };
   }, [editMode]);
+
+  // Compute sub-column layout for overlapping events in the same room
+  // Returns: { subColMap: Map<eventKey, subColIndex>, roomSubCols: Map<roomName, numSubCols> }
+  const { subColMap, roomSubCols, roomGridStart, rooms } = useMemo(() => {
+    const subColMap = new Map<string, number>(); // eventKey -> sub-column index (0-based)
+    const roomSubCols = new Map<string, number>(); // room -> number of sub-columns needed
+    const roomGridStart = new Map<string, number>(); // room -> grid column start (1-based, after time col)
+
+    // Group events by room
+    const eventsByRoom = new Map<string, Event[]>();
+    for (const e of events) {
+      const list = eventsByRoom.get(e.panelRoom) || [];
+      list.push(e);
+      eventsByRoom.set(e.panelRoom, list);
+    }
+
+    // For each room, assign sub-columns using greedy interval coloring
+    for (const room of unsortedRooms) {
+      const roomEvents = eventsByRoom.get(room) || [];
+      // Sort by start time, then by end time
+      const sorted = [...roomEvents].sort((a, b) => {
+        const sa = parseTime(a.start), sb = parseTime(b.start);
+        if (sa !== sb) return sa - sb;
+        return effectiveEnd(a) - effectiveEnd(b);
+      });
+
+      // Greedy coloring: track end time of each sub-column
+      const colEnds: number[] = []; // colEnds[i] = end time of latest event in sub-col i
+
+      for (const ev of sorted) {
+        const evStart = parseTime(ev.start);
+        const evEnd = effectiveEnd(ev);
+        // Find first sub-column where this event doesn't overlap
+        let assigned = -1;
+        for (let c = 0; c < colEnds.length; c++) {
+          if (colEnds[c] <= evStart) {
+            assigned = c;
+            colEnds[c] = evEnd;
+            break;
+          }
+        }
+        if (assigned === -1) {
+          assigned = colEnds.length;
+          colEnds.push(evEnd);
+        }
+        subColMap.set(getEventId(ev), assigned);
+      }
+
+      roomSubCols.set(room, Math.max(1, colEnds.length));
+    }
+
+    // Sort rooms: group by prefix, numeric order, heavy rooms last
+    const rooms = sortRooms(unsortedRooms, roomSubCols);
+
+    // Compute grid column start for each room
+    let col = 2; // column 1 is time column
+    for (const room of rooms) {
+      roomGridStart.set(room, col);
+      col += roomSubCols.get(room) || 1;
+    }
+    return { subColMap, roomSubCols, roomGridStart, rooms };
+  }, [events, unsortedRooms]);
 
   // Build time slots
   const slots = useMemo(() => {
@@ -451,7 +605,14 @@ function App() {
           <div className="ax2025-edit">
               <div className="ax2025-calendar-body" style={{ 
                 display: 'inline-grid',
-                gridTemplateColumns: `auto repeat(${rooms.length}, minmax(${convention.roomColumnWidth ?? 160}px, 1fr))`,
+                gridTemplateColumns: `auto ${rooms.map(r => {
+                  const n = roomSubCols.get(r) || 1;
+                  const w = convention.roomColumnWidth ?? 160;
+                  if (n === 1) return `minmax(${w}px, 1fr)`;
+                  const totalW = Math.max(w, 160 * n);
+                  const colW = Math.floor(totalW / n);
+                  return Array(n).fill(`${colW}px`).join(' ');
+                }).join(' ')}`,
                 gridAutoRows: 'auto',
                 minWidth: '100%',
               }}>
@@ -460,16 +621,20 @@ function App() {
                   className="ax2025-calendar-timecol ax2025-sticky-corner"
                   style={{ gridColumn: 1, gridRow: 1 }}
                 ></div>
-                {rooms.map((room: string, roomIndex: number) => (
+                {rooms.map((room: string) => {
+                  const gridStart = roomGridStart.get(room) || 2;
+                  const span = roomSubCols.get(room) || 1;
+                  return (
                   <div
                     key={room}
                     className="ax2025-calendar-room ax2025-room-header ax2025-sticky-header"
-                    style={{ gridColumn: roomIndex + 2, gridRow: 1 }}
+                    style={{ gridColumn: `${gridStart} / span ${span}`, gridRow: 1 }}
                     title={room}
                   >
                     <span className="ax2025-room-label">{room}</span>
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Render time slots — shifted to row slotIndex + 2 */}
                 {slots.map((t, slotIndex) => (
@@ -487,62 +652,54 @@ function App() {
                   </div>
                 ))}
                 
-                {/* Render events in rooms — gridRow shifted by +1 in EditEventCard */}
-                {rooms.map((room, roomIndex) => {
-                  // Track which slots are already occupied by multi-slot events
-                  const occupiedSlots = new Set<number>();
+                {/* Render events in rooms — using sub-column layout */}
+                {rooms.map((room) => {
+                  const gridStart = roomGridStart.get(room) || 2;
+                  const numSubCols = roomSubCols.get(room) || 1;
+                  // Track which slots are occupied per sub-column
+                  const occupiedSlots = Array.from({ length: numSubCols }, () => new Set<number>());
                   
-                  return slots.map((t, slotIndex) => {
-                    // Skip if this slot is already occupied by a multi-slot event
-                    if (occupiedSlots.has(slotIndex)) {
-                      return null;
-                    }
-                    
-                    // Find event that starts at this slot in this room
-                    const ev = events.find(
-                      (e: Event) =>
-                        e.panelRoom === room &&
-                        parseTime(e.start) === t
+                  // Get events for this room sorted by start time
+                  const roomEvents = events
+                    .filter((e: Event) => e.panelRoom === room)
+                    .sort((a, b) => parseTime(a.start) - parseTime(b.start));
+                  
+                  // Render empty gridline cells for the full room span
+                  const gridLines = slots.map((t, slotIndex) => {
+                    // Check if ANY event covers this slot
+                    const anyCover = roomEvents.some(e => parseTime(e.start) <= t && effectiveEnd(e) > t);
+                    if (anyCover) return null;
+                    return (
+                      <div
+                        key={`${room}-empty-${t}`}
+                        style={{
+                          gridColumn: `${gridStart} / span ${numSubCols}`,
+                          gridRow: slotIndex + 2,
+                        }}
+                        className="ax2025-time-gridline"
+                      ></div>
                     );
-                    
-                    if (!ev) {
-                      // If no event starts here, check if any event is ongoing
-                      const ongoingEv = events.find(
-                        (e: Event) =>
-                          e.panelRoom === room &&
-                          parseTime(e.start) < t &&
-                          effectiveEnd(e) > t
-                      );
-                      
-                      // If no ongoing event, render empty cell
-                      if (!ongoingEv) {
-                        return (
-                          <div 
-                            key={`${room}-${t}`}
-                            style={{
-                              gridColumn: roomIndex + 2,
-                              gridRow: slotIndex + 2,
-                            }}
-                            className="ax2025-time-gridline"
-                          ></div>
-                        );
-                      }
-                      
-                      return null; // Skip, as this slot will be covered by multi-slot event
-                    }
-                    
-                    // Calculate how many slots this event spans
-                    const span = calculateEventSpan(ev, slots);
-                    
-                    // Mark slots as occupied for the duration of this event
-                    for (let i = 0; i < span; i++) {
-                      occupiedSlots.add(slotIndex + i);
-                    }
-                    
+                  });
+
+                  // Render each event in its assigned sub-column
+                  const eventCards = roomEvents.map((ev) => {
                     const id = getEventId(ev);
+                    const subCol = subColMap.get(id) || 0;
+                    const evStartTime = parseTime(ev.start);
+                    const slotIndex = slots.indexOf(evStartTime);
+                    if (slotIndex === -1) return null;
+                    
+                    // Check if slot already rendered (dedup)
+                    if (occupiedSlots[subCol].has(slotIndex)) return null;
+                    
+                    const span = calculateEventSpan(ev, slots);
+                    for (let i = 0; i < span; i++) {
+                      occupiedSlots[subCol].add(slotIndex + i);
+                    }
+                    
                     const sel = selected.has(id);
                     const overlapStatus = sel ? getOverlapStatus(ev) : 'none';
-                    
+
                     return (
                       <EditEventCard
                         key={id}
@@ -551,7 +708,7 @@ function App() {
                         sel={sel}
                         overlapStatus={overlapStatus}
                         span={span}
-                        roomIndex={roomIndex}
+                        roomIndex={gridStart + subCol - 2}
                         slotIndex={slotIndex}
                         onToggle={() => {
                           const next: Set<string> = new Set(selected);
@@ -562,7 +719,9 @@ function App() {
                         onPopup={() => showEventDetail(ev)}
                       />
                     );
-                  }).filter(Boolean);
+                  });
+
+                  return [...gridLines, ...eventCards];
                 })}
               </div>
             <div className="ax2025-export">
