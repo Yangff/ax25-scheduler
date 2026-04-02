@@ -22,7 +22,7 @@ export interface ConventionListResponse {
 }
 
 export async function fetchConventionList(): Promise<ConventionListResponse> {
-  const res = await fetch(`${BASE}conventions.json`);
+  const res = await fetch(`${BASE}conventions.json`, { cache: 'no-cache' });
   if (!res.ok) throw new Error("Failed to fetch conventions list");
   const data = await res.json();
   // Handle both old format (plain array) and new format ({ conventions, defaultId })
@@ -33,7 +33,7 @@ export async function fetchConventionList(): Promise<ConventionListResponse> {
 }
 
 export async function fetchConvention(id: string): Promise<Convention> {
-  const res = await fetch(`${BASE}convention/${encodeURIComponent(id)}.json`);
+  const res = await fetch(`${BASE}convention/${encodeURIComponent(id)}.json`, { cache: 'no-cache' });
   if (!res.ok) throw new Error(`Failed to fetch convention: ${id}`);
   const data = await res.json();
   return { ...data, id };

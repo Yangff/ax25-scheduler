@@ -292,7 +292,17 @@ function App() {
     return savedEditMode === null ? true : savedEditMode === "true";
   });
   const allEvents = convention?.events ?? [];
-  const events = useMemo(() => allEvents.filter((e) => e.date === date), [allEvents, date]);
+  const events = useMemo(() => {
+    const dayEvents = allEvents.filter((e) => e.date === date);
+    // Deduplicate by event key (same title+room+date+start can appear multiple times in source)
+    const seen = new Set<string>();
+    return dayEvents.filter((e) => {
+      const id = getEventId(e);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [allEvents, date]);
   const unsortedRooms = useMemo(() => getRooms(events), [events]);
   const [selected, setSelected] = useLocalSelection(
     conventionId || "__none__",
