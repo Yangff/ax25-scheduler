@@ -380,15 +380,21 @@ def run(check_only: bool):
         seen.add(key)
 
         slot = (s["panelRoom"], s["date"], s["start"], s["end"])
-        # If this slot existed in old file, preserve old title UNLESS renamed
-        if slot in existing_by_slot:
+        src_ek = event_key(s)
+        # Match by event key first (exact match preserves title)
+        if src_ek in existing_by_key:
+            title = s["title"]  # key match means title already correct
+        elif slot in existing_by_slot:
+            # Slot match but different title — check if it was renamed
             ex = existing_by_slot[slot]
             old_ek = event_key(ex)
             if old_ek in rename_map:
-                # Use source title (the rename target)
                 title = s["title"]
+            elif ex["title"] == s["title"]:
+                title = s["title"]  # same title, no issue
             else:
-                title = ex["title"]  # preserve existing title
+                # Different title at same slot — use source title (don't overwrite)
+                title = s["title"]
         else:
             title = s["title"]
 
